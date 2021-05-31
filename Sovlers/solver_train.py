@@ -81,6 +81,8 @@ class TrainSolver(object):
             print('[{:d}] Model loaded.'.format(self.global_step))
         
         data_iter = iter(self.train_loader)
+
+        #todo: iterate the dataset my old fashioned way
         while True:
             try:
                 data_batch = data_iter.next()
@@ -108,8 +110,9 @@ class TrainSolver(object):
             self.optimizer.step()
             
             elapsed = time.time() - start_time
-            train_EPE_left = epe_metric(disp_L, disp_pred_left, self.max_disp)
-            train_3PE_left = tripe_metric(disp_L, disp_pred_left, self.max_disp)
+            #todo: make these losses optional depending on if the dataset returns disparities!!!!
+            train_EPE_left = epe_metric(disp_L, disp_pred_left, self.max_disp) # simon: absolute error
+            train_3PE_left = tripe_metric(disp_L, disp_pred_left, self.max_disp) # outlier ratios!!!!
 
             
             print(
