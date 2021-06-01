@@ -9,3 +9,8 @@ Experiments
 
 .idea
 venv
+
+tensorboard
+trained_models
+tensorboard/*
+trained_models/*

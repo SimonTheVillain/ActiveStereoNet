@@ -1,145 +1,74 @@
 import cv2
 import os
-import torch
 import numpy as np
 
 from torch.utils.data import Dataset
-from PIL import Image
 
-from .SceneFlow_helper import read_sceneflow
-from .pfm_helper import read_pfm
-
-import pdb
 
 #todo: this! + the same thing for a rendered dataset!!!!!!
 class StructureCoreCapturedDataset(Dataset):
 
-    def __init__(self, data_root, npy_root, val_split, test_split, transform, phase):
+    def __init__(self, data_root, phase, halfres=False):
 
         super(StructureCoreCapturedDataset, self).__init__()
 
         self.data_root = data_root
-        self.npy_root = npy_root
         self.phase = phase
-        self.val_split = val_split
-        self.test_split = test_split
-        self.transform = transform
+        self.halfres = halfres
+        #self.transform = transform
 
-        self.left_imgs, self.right_imgs, self.disps, self.test_left_imgs, self.test_right_imgs, self.test_disps, self.disps_R, self.test_disps_R = read_sceneflow(
-            self.data_root)
-        # pdb.set_trace()
+        self.scene_paths = []
 
-        assert len(self.left_imgs) == len(self.right_imgs) == len(self.disps) == len(
-            self.disps_R), 'Invalid training dataset!'
-        assert len(self.test_left_imgs) == len(self.test_right_imgs) == len(self.test_disps) == len(
-            self.test_disps_R), 'Invalid testing dataset!'
+        potential_paths = os.listdir(data_root)
+        potential_paths.sort()
+        for path in potential_paths:
+            path = os.path.join(data_root, path)
+            if os.path.isdir(path):
+                self.scene_paths.append(path)
 
-        # total_data_num = len(self.left_imgs)
+        if phase == "train":
+            self.idx_from = 0
+            self.idx_to = int(len(self.scene_paths) * 0.95)
 
-        # self.nb_train = int((1 - self.val_split - self.test_split) * total_data_num)
-        # self.nb_val = int(self.val_split * total_data_num)
-        # self.nb_test = int(self.test_split * total_data_num)
+        if phase == "val":
+            self.idx_from = int(len(self.scene_paths) * 0.95)
+            self.idx_to = len(self.scene_paths)
 
-        test_data_num = len(self.test_left_imgs)
-
-        self.nb_train = len(self.left_imgs)
-        self.nb_val = int(self.val_split * test_data_num)
-        self.nb_test = test_data_num
-
-        train_npy = os.path.join(self.npy_root, 'train.npy')
-        val_npy = os.path.join(self.npy_root, 'val.npy')
-        test_npy = os.path.join(self.npy_root, 'test.npy')
-
-        if os.path.exists(train_npy) and os.path.exists(val_npy) and os.path.exists(test_npy):
-            # self.train_list = np.load(train_npy)
-            self.val_list = np.load(val_npy)
-            # pdb.set_trace()
-            # self.test_list = np.load(test_npy)
-
-
-        else:
-            # total_idcs = np.random.permutation(total_data_num)
-            # self.train_list = total_idcs[0:self.nb_train]
-            # self.val_list = total_idcs[self.nb_train:self.nb_train + self.nb_val]
-            # self.test_list = total_idcs[self.nb_train + self.nb_val:]
-
-            test_idcs = np.random.permutation(test_data_num)
-            self.val_list = test_idcs[0:self.nb_val]
-
-            # np.save(train_npy, self.train_list)
-            np.save(val_npy, self.val_list)
-            # np.save(test_npy, self.test_list)
 
     def __len__(self):
+        return (self.idx_to - self.idx_from) * 4
+    def __getitem__(self, idx):
+        scene_idx = int(idx / 4) + self.idx_from
+        frame_idx = idx % 4
 
-        if self.phase == 'train':
-            return self.nb_train
-        elif self.phase == 'val':
-            return self.nb_val
-        elif self.phase == 'test':
-            return self.nb_test
+        scene_path = self.scene_paths[scene_idx]
 
-    def __getitem__(self, index):
+        filename = os.path.join(scene_path, f"ir{frame_idx}.png")
+        ir = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+        assert ir is not None, f"Does file {filename} exist?"
+        if self.halfres:
+            ir = cv2.resize(ir, (int(ir.shape[1] / 2), int(ir.shape[0] / 2)))
 
-        if self.phase == 'train':
-            left_image = self._read_image(self.left_imgs[index])
-            right_image = self._read_image(self.right_imgs[index])
-            left_disp, scale = read_pfm(self.disps[index])
-            right_disp, scale = read_pfm(self.disps_R[index])
+        ir = ir.astype(np.float32) * (1.0 / 65536.0)
+        irl = ir[:, int(ir.shape[1] / 2):]
+        irr = ir[:, :int(ir.shape[1] / 2)]
 
-        elif self.phase == 'val':
-            index = self.val_list[index]
-            left_image = self._read_image(self.test_left_imgs[index])
-            right_image = self._read_image(self.test_right_imgs[index])
-            left_disp, scale = read_pfm(self.test_disps[index])
-            right_disp, scale = read_pfm(self.test_disps_R[index])
+        irl = np.expand_dims(irl, 0)
+        irr = np.expand_dims(irr, 0)
 
-        elif self.phase == 'test':
-            left_image = self._read_image(self.test_left_imgs[index])
-            right_image = self._read_image(self.test_right_imgs[index])
-            left_disp, scale = read_pfm(self.test_disps[index])
-            right_disp, scale = read_pfm(self.test_disps_R[index])
+        return irl, irr
 
-        if self.transform:
-            left_image = self.transform(left_image)
-            right_image = self.transform(right_image)
 
-        left_disp = torch.Tensor(left_disp)
-        right_disp = torch.Tensor(right_disp)
-        return left_image, right_image, left_disp, right_disp
 
-    '''
-    def __getitem__(self, index):
+def test_dataset():
+    dataset_path = "/media/simon/ext_ssd/datasets/structure_core/sequences_combined"
+    split = "train" # as opposed to val
+    dataset = StructureCoreCapturedDataset(dataset_path, split)
+    for data in dataset:
+        irl, irr = data
+        cv2.imshow("irl", irl[0, :, :])
+        cv2.imshow("irr", irr[0, :, :])
+        cv2.waitKey()
 
-        if self.phase == 'train':
-            index = self.train_list[index]
-        elif self.phase == 'val':
-            index = self.val_list[index]
-        elif self.phase == 'test':
-            index = self.test_list[index]
-
-        left_image = self._read_image(self.left_imgs[index])
-        right_image = self._read_image(self.right_imgs[index])
-        left_disp, scale = read_pfm(self.disps[index])
-
-        if self.transform:
-            left_image = self.transform(left_image)
-            right_image = self.transform(right_image)
-
-        left_disp = torch.Tensor(left_disp)
-
-        return left_image, right_image, left_disp, scale
-    '''
-
-    def _read_image(self, filename):
-
-        attempt = True
-        while attempt:
-            try:
-                with open(filename, 'rb') as f:
-                    img = Image.open(f).convert('RGB')
-                attempt = False
-            except IOError as e:
-                print('[IOError] {}, keep trying...'.format(e))
-                attempt = True
-        return img
+if __name__ == "__main__":
+    test_dataset()

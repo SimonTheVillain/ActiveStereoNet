@@ -9,10 +9,10 @@ from .blocks import *
 import pdb
 
 class SiameseTower(nn.Module):
-    def __init__(self, scale_factor):
+    def __init__(self, scale_factor, ch_in=3):
         super(SiameseTower, self).__init__()
 
-        self.conv1 = conv_block(nc_in=3, nc_out=32, k=3, s=1, norm=None, act=None)
+        self.conv1 = conv_block(nc_in=ch_in, nc_out=32, k=3, s=1, norm=None, act=None)
         res_blocks = [ResBlock(32, 32, 3, 1, 1)] * 3
         self.res_blocks = nn.Sequential(*res_blocks)    
         convblocks = [conv_block(32, 32, k=3, s=2, norm='bn', act='lrelu')] * int(math.log2(scale_factor))
@@ -103,12 +103,12 @@ class CoarseNet(nn.Module):
 
         
 class RefineNet(nn.Module):
-    def __init__(self):
+    def __init__(self, ch_in=3):
         super(RefineNet, self).__init__()
         self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
         # stream_1, left_img
-        self.conv1_s1 = conv_block(3, 16, 3, 1)
+        self.conv1_s1 = conv_block(ch_in, 16, 3, 1)
         self.resblock1_s1 = ResBlock(16, 16, 3, 1, 1)
         self.resblock2_s1 = ResBlock(16, 16, 3, 1, 2)
 
@@ -175,13 +175,13 @@ class InvalidationNet(nn.Module):
 
 
 class ActiveStereoNet(nn.Module):
-    def __init__(self, maxdisp, scale_factor, img_shape):
+    def __init__(self, maxdisp, scale_factor, img_shape, ch_in=3):
         super(ActiveStereoNet, self).__init__()
         self.maxdisp = maxdisp
         self.scale_factor = scale_factor
-        self.SiameseTower = SiameseTower(scale_factor)
+        self.SiameseTower = SiameseTower(scale_factor, ch_in=ch_in)
         self.CoarseNet = CoarseNet(maxdisp, scale_factor, img_shape)
-        self.RefineNet = RefineNet()
+        self.RefineNet = RefineNet(ch_in=ch_in)
         #self.InvalidationNet = InvalidationNet()
         self.img_shpae = img_shape
 

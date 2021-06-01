@@ -7,7 +7,7 @@ import os
 from torch.backends import cudnn
 
 from Options import parse_opt
-from Sovlers import get_solver
+from Solvers import get_solver
 
 def main():
     

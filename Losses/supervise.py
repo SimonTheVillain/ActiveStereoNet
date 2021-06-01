@@ -31,15 +31,15 @@ class XTLoss(nn.Module):
         left_img right_img: N * C * H * W,
         dispmap : N * H * W
     '''
-    def __init__(self, max_disp):
+    def __init__(self, max_disp, ch_in=3):
         super(XTLoss, self).__init__()
         self.max_disp = max_disp
         self.theta = torch.Tensor(
             [[1, 0, 0],  # 控制左右，-右，+左
             [0, 1, 0]]    # 控制上下，-下，+上
         )
-        self.inplanes = 3
-        self.outplanes = 3
+        self.inplanes = ch_in
+        self.outplanes = ch_in
         
 
 
@@ -52,7 +52,8 @@ class XTLoss(nn.Module):
         theta = self.theta.repeat(left_img.size()[0], 1, 1)
         
         
-        grid = F.affine_grid(theta, left_img.size())
+        #grid = F.affine_grid(theta, left_img.size())
+        grid = F.affine_grid(theta, left_img.size(), align_corners=True)#enable old behaviour
         grid = grid.cuda()
         
         dispmap_norm = dispmap * 2 / w
@@ -63,8 +64,9 @@ class XTLoss(nn.Module):
         
         grid -= dispmap_norm
         
-        recon_img = F.grid_sample(right_img, grid)
-        
+        #recon_img = F.grid_sample(right_img, grid)
+        recon_img = F.grid_sample(right_img, grid, align_corners=True)#enable old behaviour
+
         #pdb.set_trace()
         recon_img_LCN, _, _ = self.LCN(recon_img, 9)
         
@@ -74,7 +76,7 @@ class XTLoss(nn.Module):
         losses = torch.abs(((left_img_LCN - recon_img_LCN) * left_std_local))
         
         #pdb.set_trace()
-        losses = self.ASW(left_img, losses, 12, 2)
+        losses = self.ASW(left_img, losses, 12, 2) # adaptive support window
         
         return losses
 
