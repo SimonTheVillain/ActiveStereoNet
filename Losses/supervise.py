@@ -55,15 +55,21 @@ class XTLoss(nn.Module):
         #grid = F.affine_grid(theta, left_img.size())
         grid = F.affine_grid(theta, left_img.size(), align_corners=True)#enable old behaviour
         grid = grid.cuda()
-        
-        dispmap_norm = dispmap * 2 / w
-        dispmap_norm = dispmap_norm.cuda()
+        #print(grid)
+        #print(dispmap.shape) #simon: they tend to go towards 0
+        #print(torch.max(dispmap))
+        #print(torch.mean(dispmap))
+        #print(torch.min(dispmap))
+        dispmap_norm = dispmap * 2 / w # times 2 because grid_sample normalizes between -1 and 1!
+        #dispmap_norm = dispmap_norm.cuda() # why cuda? it already is on a cuda device!
         #pdb.set_trace()
+        #print(dispmap_norm.shape)
         dispmap_norm = dispmap_norm.squeeze(1).unsqueeze(3)
+        #print(dispmap_norm.shape)
         dispmap_norm = torch.cat((dispmap_norm, torch.zeros(dispmap_norm.size()).cuda()), dim=3)
-        
+        #print(dispmap_norm.shape)
         grid -= dispmap_norm
-        
+
         #recon_img = F.grid_sample(right_img, grid)
         recon_img = F.grid_sample(right_img, grid, align_corners=True)#enable old behaviour
 

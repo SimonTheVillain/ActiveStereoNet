@@ -11,7 +11,7 @@ def main():
     dataset_path = "/media/simon/ext_ssd/datasets/structure_core/sequences_combined"
 
     experiment_name = "test3"
-    batch_size = 4#2 in the example
+    batch_size = 1#2 in the example
     num_workers = 8
     crop_size = [608, 448]#[1216, 896]# [960, 540] original sceneflow resolution [1280, 720] would be for activestereonet
     crop_size = [1216, 896]
@@ -31,6 +31,7 @@ def main():
     overall_steps = int(60000 * step_scale)
 
     model = ActiveStereoNet(max_disp, scale_factor, crop_size, ch_in=1)
+    model = torch.load("trained_models/test2.pt")
     model = model.cuda()
 
     crit = XTLoss(max_disp, ch_in=1)
@@ -95,6 +96,10 @@ def main():
                 loss_accu_sub += loss
                 step += 1
                 if i_batch % 100 == 99:
+
+                    print(disp_pred_left.max())
+                    print(disp_pred_left.min())
+                    print(disp_pred_left.mean())
                     loss = loss_accu_sub / 100
                     loss_accu_sub = 0
                     print(f"step {step} with loss {loss}")

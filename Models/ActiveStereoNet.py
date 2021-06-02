@@ -211,10 +211,11 @@ class ActiveStereoNet(nn.Module):
         right_tower = self.SiameseTower(right)
         #pdb.set_trace()
         coarseup_pred = self.CoarseNet(left_tower, right_tower)
-        res_disp = self.RefineNet(left, coarseup_pred)
+        #print(coarseup_pred.shape)
+        #res_disp = self.RefineNet(left, coarseup_pred)
 
-        ref_pred = coarseup_pred + res_disp
-        
+        #ref_pred = coarseup_pred + res_disp
+        ref_pred = coarseup_pred
         
 
         return nn.ReLU(False)(ref_pred)

@@ -17,8 +17,10 @@ def read_sceneflow(filepath):
     image = [img for img in classes if img.find('frames_cleanpass') > -1]
     disp  = [dsp for dsp in classes if dsp.find('disparity') > -1]
 
-    monkaa_path = filepath + [x for x in image if 'monkaa' in x][0]
-    monkaa_disp = filepath + [x for x in disp if 'monkaa' in x][0]
+    #monkaa_path = filepath + [x for x in image if 'monkaa' in x][0]#before
+    #monkaa_disp = filepath + [x for x in disp if 'monkaa' in x][0]#before
+    monkaa_path = filepath + [x for x in image if 'frames_cleanpass' in x][0]#simon
+    monkaa_disp = filepath + [x for x in disp if 'disparity' in x][0]#simon
     monkaa_dir  = os.listdir(monkaa_path)
 
     all_left_img = []
@@ -40,7 +42,14 @@ def read_sceneflow(filepath):
             if is_image_file(monkaa_path + '/' + dd + '/right/' + im):
                 all_right_img.append(monkaa_path + '/' + dd + '/right/' + im)
                 all_right_disp.append(monkaa_disp + '/' + dd + '/right/' + im.split(".")[0] + '.pfm')
-    
+
+    #simon
+    test_left_img = all_left_img[:100]
+    test_right_img = all_right_img[:100]
+    test_left_disp = all_left_disp[:100]
+    test_right_disp = all_right_disp[:100]
+    return all_left_img, all_right_img, all_left_disp, test_left_img, test_right_img, test_left_disp, all_right_disp, test_right_disp
+
     flying_path = filepath  +  [x for x in image if x == 'frames_cleanpass'][0]
     flying_disp = filepath  +  [x for x in disp if x == 'frames_disparity'][0]
     flying_dir = flying_path + '/TRAIN/'
