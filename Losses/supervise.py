@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pdb
+import cv2 # debugging purposes
+import numpy as np # debugging 2
 
 class RHLoss(nn.Module):
 
@@ -51,9 +53,9 @@ class XTLoss(nn.Module):
         #pdb.set_trace()
         theta = self.theta.repeat(left_img.size()[0], 1, 1)
         
-        
         #grid = F.affine_grid(theta, left_img.size())
         grid = F.affine_grid(theta, left_img.size(), align_corners=True)#enable old behaviour
+        #print(grid)
         grid = grid.cuda()
         #print(grid)
         #print(dispmap.shape) #simon: they tend to go towards 0
@@ -73,6 +75,22 @@ class XTLoss(nn.Module):
         #recon_img = F.grid_sample(right_img, grid)
         recon_img = F.grid_sample(right_img, grid, align_corners=True)#enable old behaviour
 
+        if True:
+            disp_pred_left = dispmap[0, 0, :, :].clone()
+            disp_pred_left -= disp_pred_left.min()
+            disp_pred_left /= disp_pred_left.max()
+            cv2.imshow("dispmap", disp_pred_left.clone().detach().cpu().numpy())
+
+            cv2.imshow("recon_img", recon_img[0, 0, :, :].clone().detach().cpu().numpy())
+            cv2.imshow("left_img", left_img[0, 0, :, :].clone().detach().cpu().numpy())
+            cv2.imshow("right_img", right_img[0, 0, :, :].clone().detach().cpu().numpy())
+            cv2.imshow("img_diff", np.abs(left_img[0, 0, :, :].clone().detach().cpu().numpy() -
+                                          recon_img[0, 0, :, :].clone().detach().cpu().numpy()))
+            # check if the sign is right
+            recon_img2 = F.grid_sample(right_img, grid - 0.5, align_corners=True)#enable old behaviour (seems about right)
+            cv2.imshow("recon_img2", recon_img2[0, 0, :, :].clone().detach().cpu().numpy())
+            cv2.waitKey(10)
+            cv2.waitKey()
         #pdb.set_trace()
         recon_img_LCN, _, _ = self.LCN(recon_img, 9)
         
@@ -83,7 +101,14 @@ class XTLoss(nn.Module):
         
         #pdb.set_trace()
         losses = self.ASW(left_img, losses, 12, 2) # adaptive support window
-        
+        #print(losses)
+
+        if True:
+            outlier_loss = torch.zeros_like(dispmap)
+            outlier_loss[dispmap < 0] = -dispmap[dispmap < 0]
+            outlier_loss[dispmap > self.max_disp] = dispmap[dispmap > self.max_disp] - self.max_disp
+            losses += outlier_loss.mean()
+
         return losses
 
 

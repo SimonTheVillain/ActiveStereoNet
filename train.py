@@ -1,21 +1,26 @@
 import torch
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
-from Data.structure_core import StructureCoreCapturedDataset
+from Data.structure_core import StructureCoreCapturedDataset, StructureCoreRenderedDataset
 from Models.ActiveStereoNet import ActiveStereoNet
 from Losses.supervise import *
+import cv2
 
 
 def main():
+    fully_supervised = True
     dataset_path = "/home/simon/datasets/structure_core/sequences_combined"
-    dataset_path = "/media/simon/ext_ssd/datasets/structure_core/sequences_combined"
+    #dataset_path = "/media/simon/ext_ssd/datasets/structure_core/sequences_combined"
+    if fully_supervised:
+        dataset_path = "/media/simon/ext_ssd/datasets/structure_core_unity_3"
 
-    experiment_name = "test3"
-    batch_size = 1#2 in the example
+
+    experiment_name = "test6"
+    batch_size = 2#2 in the example
     num_workers = 8
     crop_size = [608, 448]#[1216, 896]# [960, 540] original sceneflow resolution [1280, 720] would be for activestereonet
-    crop_size = [1216, 896]
-    half_res = True
+    #crop_size = [1216, 896]
+    half_res = False
     if half_res:
         crop_size = [int(crop_size[0] / 2), int(crop_size[1] / 2)]
     max_disp = 144
@@ -23,7 +28,7 @@ def main():
 
     lr_init = 1e-3
     scheduler_gamma = 0.5
-    step_scale = 2
+    step_scale = 4
     scheduler_milestones = [int(20000 * step_scale),
                             int(30000 * step_scale),
                             int(40000 * step_scale),
@@ -31,14 +36,17 @@ def main():
     overall_steps = int(60000 * step_scale)
 
     model = ActiveStereoNet(max_disp, scale_factor, crop_size, ch_in=1)
-    model = torch.load("trained_models/test2.pt")
+    model = torch.load("trained_models/test6_chk.pt")
     model = model.cuda()
 
     crit = XTLoss(max_disp, ch_in=1)
     #crit = RHLoss(max_disp)
 
-    datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res)
+    datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
                    for x in ['train', 'val']}
+    if fully_supervised:
+        datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
+                    for x in ['train', 'val']}
 
     dataloaders = {x: torch.utils.data.DataLoader(datasets[x], batch_size=batch_size,
                                                   shuffle=True, num_workers=num_workers)
@@ -54,7 +62,7 @@ def main():
 
     dataset_sizes = {x: len(datasets[x]) for x in ['train', 'val']}
 
-    epochs = int(overall_steps / dataset_sizes["train"])
+    epochs = overall_steps // dataset_sizes["train"] + 1
     step = 0
     loss_min = 10000000
     for epoch in range(epochs):
@@ -73,23 +81,40 @@ def main():
                 if len(sampled_batch) == 2:
                     irl, irr = sampled_batch
                     irl, irr = irl.cuda(), irr.cuda()
+                else:
+                    irl, irr, disp_gt = sampled_batch
+                    irl, irr, disp_gt = irl.cuda(), irr.cuda(), disp_gt.cuda()
+
 
                 if phase == "train":
                     optimizer.zero_grad()
+                    disp_pred_left, coarsedisp_pred_left, debug_presoftmax = model(irl, irr)
+                    #debug_presoftmax.retain_grad() # debug remove
+                    if fully_supervised:
+                        loss = torch.abs(disp_gt - disp_pred_left).mean() * 0.0
+                        loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
+                    else:
+                        loss = crit(irl, irr, disp_pred_left)
 
-                    disp_pred_left = model(irl, irr)
-
-                    loss = crit(irl, irr, disp_pred_left)
+                    #disp_pred_left.retain_grad()# todo: debug remove
                     loss.backward()
+                    #print(debug_presoftmax.grad.abs().max())
+                    #print(disp_pred_left.grad.abs().max())
+                    #print(debug_presoftmax.grad[0, 0, :, 100, 100])
                     optimizer.step()
                     scheduler.step()
                     loss = loss.item()
 
                 else:
                     with torch.no_grad():
-                        disp_pred_left = model(irl, irr)
+                        disp_pred_left, coarsedisp_pred_left, _ = model(irl, irr)
 
-                        loss = crit(irl, irr, disp_pred_left)
+                        if fully_supervised:
+                            loss = torch.abs(disp_gt - disp_pred_left).mean() * 0.0
+                            loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
+                        else:
+                            loss = crit(irl, irr, disp_pred_left)
+
                         loss = loss.item()
 
                 loss_accu += loss
@@ -97,9 +122,58 @@ def main():
                 step += 1
                 if i_batch % 100 == 99:
 
-                    print(disp_pred_left.max())
-                    print(disp_pred_left.min())
-                    print(disp_pred_left.mean())
+
+                    # todo: show reprojected
+                    if True:
+                        cv2.imshow("irl", irl[0,0,:,:].detach().cpu().numpy())
+                        cv2.imshow("irr", irr[0,0,:,:].detach().cpu().numpy())
+
+                        theta = torch.Tensor(
+                            [[1, 0, 0],  # 控制左右，-右，+左
+                             [0, 1, 0]]  # 控制上下，-下，+上
+                        )
+                        theta = theta.repeat(irl.size()[0], 1, 1)
+                        grid = F.affine_grid(theta, irl.size(), align_corners=True)  # enable old behaviour
+                        # print(grid)
+                        grid = grid.cuda()
+                        dispmap_norm = disp_gt * 2 / disp_gt.shape[3] # times 2 because grid_sample normalizes between -1 and 1!
+
+                        dispmap_norm = dispmap_norm.squeeze(1).unsqueeze(3)
+                        # print(dispmap_norm.shape)
+                        dispmap_norm = torch.cat((dispmap_norm, torch.zeros(dispmap_norm.size()).cuda()), dim=3)
+                        # print(dispmap_norm.shape)
+                        grid -= dispmap_norm
+
+                        recon_img = F.grid_sample(irr, grid, align_corners=True)  # enable old behaviour
+
+                        cv2.imshow("recon_img", recon_img[0,0,:,:].detach().cpu().numpy())
+
+                        print(f"pred.max {disp_pred_left.max()}")
+                        print(f"pred.min {disp_pred_left.min()}")
+                        print(f"pred.mean {disp_pred_left.mean()}")
+                        disp_pred_left = disp_pred_left[0, 0, :, :]
+                        disp_pred_left -= disp_pred_left.min()
+                        disp_pred_left /= disp_pred_left.max() + 0.1
+                        cv2.imshow("disp_pred", disp_pred_left.detach().cpu().numpy())
+
+
+
+                        print(f"coarsepred.max {coarsedisp_pred_left.max()}")
+                        print(f"coarsepred.min {coarsedisp_pred_left.min()}")
+                        print(f"coarsepred.mean {coarsedisp_pred_left.mean()}")
+                        coarsedisp_pred_left = coarsedisp_pred_left[0, 0, :, :]
+                        coarsedisp_pred_left -= coarsedisp_pred_left.min()
+                        coarsedisp_pred_left /= coarsedisp_pred_left.max() + 0.1
+                        cv2.imshow("coarsedisp_pred_left", coarsedisp_pred_left.detach().cpu().numpy())
+
+                        print(f"disp_gt.max {disp_gt.max()}")
+                        print(f"disp_gt.min {disp_gt.min()}")
+                        print(f"disp_gt.mean {disp_gt.mean()}")
+                        disp_gt = disp_gt[0, 0, :, :]
+                        disp_gt -= disp_gt.min()
+                        disp_gt /= disp_gt.max() + 0.1
+                        cv2.imshow("disp_gt", disp_gt.detach().cpu().numpy())
+                        cv2.waitKey(100)
                     loss = loss_accu_sub / 100
                     loss_accu_sub = 0
                     print(f"step {step} with loss {loss}")

@@ -13,8 +13,9 @@ class SiameseTower(nn.Module):
         super(SiameseTower, self).__init__()
 
         self.conv1 = conv_block(nc_in=ch_in, nc_out=32, k=3, s=1, norm=None, act=None)
-        res_blocks = [ResBlock(32, 32, 3, 1, 1)] * 3
-        self.res_blocks = nn.Sequential(*res_blocks)    
+        res_blocks = [ResBlock(32, 32, 3, 1, 1)] * 3# simon: are we not sharing weights this way?
+        assert res_blocks[0] is not res_blocks[1]
+        self.res_blocks = nn.Sequential(*res_blocks)
         convblocks = [conv_block(32, 32, k=3, s=2, norm='bn', act='lrelu')] * int(math.log2(scale_factor))
         self.conv_blocks = nn.Sequential(*convblocks)
         self.conv2 = conv_block(nc_in=32, nc_out=32, k=3, s=1, norm=None, act=None)
@@ -22,6 +23,32 @@ class SiameseTower(nn.Module):
     def forward(self, x):
 
         #pdb.set_trace()
+        out = self.conv1(x)
+        out = self.res_blocks(out)
+        out = self.conv_blocks(out)
+        out = self.conv2(out)
+
+        return out
+
+
+class SiameseTower2(nn.Module):
+    def __init__(self, scale_factor, ch_in=3):
+        super(SiameseTower2, self).__init__()
+
+        self.conv1 = conv_block(nc_in=ch_in, nc_out=32, k=3, s=1, norm=None, act=None)
+        res_blocks = [ResBlock(32, 32, 3, 1, 1),
+                      ResBlock(32, 32, 3, 1, 1),
+                      ResBlock(32, 32, 3, 1, 1)] # in the original paper, i doubt they would be sharing weights as in the implementation by blar...
+        self.res_blocks = nn.Sequential(*res_blocks)
+
+        convblocks = []#conv_block(ch_in, 32, k=3, s=2, norm='bn', act='lrelu')]
+        for i in range(int(math.log2(scale_factor))):
+            convblocks.append(conv_block(32, 32, k=3, s=2, norm='bn', act='lrelu'))
+        self.conv_blocks = nn.Sequential(*convblocks)
+        self.conv2 = conv_block(nc_in=32, nc_out=32, k=3, s=1, norm=None, act=None)
+
+    def forward(self, x):
+        # pdb.set_trace()
         out = self.conv1(x)
         out = self.res_blocks(out)
         out = self.conv_blocks(out)
@@ -79,10 +106,11 @@ class CoarseNet(nn.Module):
         #pdb.set_trace()
         cost = F.interpolate(cost, size=[self.maxdisp, self.img_shape[1], self.img_shape[0]], mode='trilinear', align_corners=False)
         #pdb.set_trace()
+        debug_presoftmax = cost
         pred = cost.softmax(dim=2).squeeze(dim=1)
         pred = self.disp_reg(pred)
 
-        return pred
+        return pred, debug_presoftmax
     
     def forward(self, refimg_fea, targetimg_fea):
         '''
@@ -94,10 +122,10 @@ class CoarseNet(nn.Module):
         cost_left = self.costVolume(refimg_fea, targetimg_fea, 'left')
         #cost_right = self.costVolume(refimg_fea, targetimg_fea, 'right')
 
-        pred_left = self.Coarsepred(cost_left)
+        pred_left, debug_presoftmax = self.Coarsepred(cost_left)
         #pred_right = self.Coarsepred(cost_right)
 
-        return pred_left#, pred_right
+        return pred_left, debug_presoftmax#, pred_right
         
 
 
@@ -149,12 +177,20 @@ class InvalidationNet(nn.Module):
         super(InvalidationNet, self).__init__()
         self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
         
-        resblocks1 = [ResBlock(64, 64, 3, 1, 1)] * 5
+        #resblocks1 = [ResBlock(64, 64, 3, 1, 1)] * 5 # is this really what we want?
+        resblocks1 = []
+        for i in range(5):
+            resblocks1.append(ResBlock(64, 64, 3, 1, 1))
+
+
         self.resblocks1 = nn.Sequential(*resblocks1)
         self.conv1 = conv_block(64, 1, 3, 1, norm=None, act=None)
 
         self.conv2 = conv_block(5, 32, 3, 1)
-        resblocks2 = [ResBlock(32, 32, 3, 1, 1)] * 4
+        #resblocks2 = [ResBlock(32, 32, 3, 1, 1)] * 4
+        resblocks2 = []
+        for i in range(4):
+            resblocks2.append(ResBlock(32, 32, 3, 1, 1))
         self.resblocks2 = nn.Sequential(*resblocks2)
         self.conv3 = conv_block(32, 1, 3, 1, norm=None, act=None)
 
@@ -179,7 +215,7 @@ class ActiveStereoNet(nn.Module):
         super(ActiveStereoNet, self).__init__()
         self.maxdisp = maxdisp
         self.scale_factor = scale_factor
-        self.SiameseTower = SiameseTower(scale_factor, ch_in=ch_in)
+        self.SiameseTower = SiameseTower2(scale_factor, ch_in=ch_in)
         self.CoarseNet = CoarseNet(maxdisp, scale_factor, img_shape)
         self.RefineNet = RefineNet(ch_in=ch_in)
         #self.InvalidationNet = InvalidationNet()
@@ -210,13 +246,13 @@ class ActiveStereoNet(nn.Module):
         left_tower = self.SiameseTower(left)
         right_tower = self.SiameseTower(right)
         #pdb.set_trace()
-        coarseup_pred = self.CoarseNet(left_tower, right_tower)
+        coarseup_pred, debug_presoftmax = self.CoarseNet(left_tower, right_tower)
+        #print(f"coarse {coarseup_pred.mean()}")
         #print(coarseup_pred.shape)
-        #res_disp = self.RefineNet(left, coarseup_pred)
+        res_disp = self.RefineNet(left, coarseup_pred)
+        #print(f"refinement {res_disp.mean()}")
+        ref_pred = coarseup_pred + res_disp
+        #ref_pred = coarseup_pred #debug: get rid of the refine step
 
-        #ref_pred = coarseup_pred + res_disp
-        ref_pred = coarseup_pred
-        
-
-        return nn.ReLU(False)(ref_pred)
+        return F.leaky_relu(ref_pred), coarseup_pred, debug_presoftmax#nn.ReLU(False)(ref_pred)
 

@@ -84,7 +84,9 @@ class DisparityRegression(nn.Module):
             )).cuda().float().requires_grad_(False)
     
     def forward(self, x):
-        
+        #print(x.shape)
+        #print(self.disp.shape)
+        #print(x.mul(self.disp)[0,:,100,100])
         y = x.mul(self.disp).sum(dim=1, keepdim=True)
        
         return y
