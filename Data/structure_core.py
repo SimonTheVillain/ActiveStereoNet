@@ -90,6 +90,7 @@ class StructureCoreRenderedDataset(Dataset):
         files = os.listdir(data_root)
         if len(files) == 0:
             print(f"no files in {data_root}")
+            exit()
         #print(files)
         keys = []
         for file in files:
@@ -97,6 +98,10 @@ class StructureCoreRenderedDataset(Dataset):
                 keys.append(file.split("_")[0])
 
         self.keys = list(set(keys))
+
+        if len(self.keys) == 0:
+            print(f"no valid files in {data_root}")
+            exit()
 
         if phase == "train":
             self.idx_from = 0
