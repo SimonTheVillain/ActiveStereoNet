@@ -35,6 +35,9 @@ class StructureCoreCapturedDataset(Dataset):
             self.idx_from = int(len(self.scene_paths) * 0.95)
             self.idx_to = len(self.scene_paths)
 
+        #todo: replace with assert
+        assert self.__len__() > 0, f"Captured dataset error: No sequences in {data_root}"
+
 
     def __len__(self):
         return (self.idx_to - self.idx_from) * 4

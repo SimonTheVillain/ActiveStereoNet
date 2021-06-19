@@ -51,7 +51,7 @@ def main():
 
     dataset_path = args.dataset_path
     if dataset_path == "":
-        print("error! provide dataset_path (-path ...)")
+        print("error! provide dataset_path (--path ...)")
         return
     experiment_name = "classification_full_1"
     experiment_name = args.experiment_name
