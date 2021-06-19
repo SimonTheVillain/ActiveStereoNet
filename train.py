@@ -86,8 +86,9 @@ def main():
     crit = XTLoss(max_disp, ch_in=1)
     #crit = RHLoss(max_disp)
 
-    datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
-                   for x in ['train', 'val']}
+    if loss_type == "active_stereo":
+        datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
+                       for x in ['train', 'val']}
     if loss_type in ["fully_supervised", "classification"]:
         datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
                     for x in ['train', 'val']}
