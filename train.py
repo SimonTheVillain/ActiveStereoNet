@@ -6,22 +6,60 @@ from Models.ActiveStereoNet import ActiveStereoNet
 from Losses.supervise import *
 import cv2
 import math
+import argparse
 
 
 def main():
-    loss_type = "active_stereo" #"fully_supervised" "classification" "active_stereo"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-l", "--loss", dest="loss_type", action="store",
+                        help="One of the three loss types: fully_supervised, classification and active_stereo",
+                        default="active_stereo")
+    parser.add_argument("-p", "--path", dest="dataset_path", action="store",
+                        help="Path to dataset.",
+                        default="")
+    parser.add_argument("-chk", "--load_checkpoint", dest="load_checkpoint", action="store",
+                        help="Name of the model to be loaded.",
+                        default="")
+    parser.add_argument("-e", "--experiment_name", dest="experiment_name", action="store",
+                        help="Name of the current experiment.",
+                        default="")
+    parser.add_argument("-ss", "--step_scale", dest="step_scale", action="store",
+                        help="How many times of the basic epochs/steps should the training procedure use?",
+                        type=int,
+                        default=4)
+
+    parser.add_argument("-s", "--scale", dest="scale", action="store",
+                        help="divider by which the image is downsampled.",
+                        type=int,
+                        default=1)
+
+    parser.add_argument("-d", "--debug", dest="debug_output", action="store",
+                        help="Enables debug output for our training.",
+                        type=bool,
+                        default=False)
+    args = parser.parse_args()
+
+
+    loss_type = "classification" #"fully_supervised" "classification" "active_stereo"
+    loss_type = args.loss_type
     #fully_supervised = True
     dataset_path = "/home/simon/datasets/structure_core/sequences_combined"
     #dataset_path = "/media/simon/ext_ssd/datasets/structure_core/sequences_combined"
     if loss_type in ["fully_supervised", "classification"]:
         dataset_path = "/media/simon/ext_ssd/datasets/structure_core_unity_3"
 
-
-    experiment_name = "active_stereo_2"
-    batch_size = 2#2 in the example
+    dataset_path = args.dataset_path
+    if dataset_path == "":
+        print("error! provide dataset_path (-path ...)")
+        return
+    experiment_name = "classification_full_1"
+    experiment_name = args.experiment_name
+    batch_size = 1#2 in the example
     num_workers = 8
     crop_size = [608, 448]#[1216, 896]# [960, 540] original sceneflow resolution [1280, 720] would be for activestereonet
-    #crop_size = [1216, 896]
+    crop_size = [1216, 896]
+    crop_size = [crop_size[0] // args.scale, crop_size[1] // args.scale]
     half_res = False
     if half_res:
         crop_size = [int(crop_size[0] / 2), int(crop_size[1] / 2)]
@@ -33,6 +71,7 @@ def main():
     lr_init = 1e-4
     scheduler_gamma = 0.5
     step_scale = 4
+    step_scale = args.step_scale
     scheduler_milestones = [int(20000 * step_scale),
                             int(30000 * step_scale),
                             int(40000 * step_scale),
@@ -40,7 +79,7 @@ def main():
     overall_steps = int(60000 * step_scale)
 
     model = ActiveStereoNet(max_disp, scale_factor, crop_size, ch_in=1)
-    model = torch.load("trained_models/active_stereo_1_chk.pt")
+    #model = torch.load("trained_models/active_stereo_1_chk.pt")
     model = model.cuda()
 
     crit = XTLoss(max_disp, ch_in=1)
@@ -103,6 +142,8 @@ def main():
                         disp_gt_2 = disp_gt_2.squeeze(1).type(torch.int64).clamp(0, max_disp//8 - 1)
                         presoftmax = presoftmax.squeeze(1)
                         loss = F.cross_entropy(presoftmax, disp_gt_2, reduction="mean")
+
+                        loss += torch.abs(disp_gt - disp_pred_left).mean() * 1.0
                     if loss_type == "active_stereo":
                         loss = crit(irl, irr, disp_pred_left)
 
@@ -128,6 +169,8 @@ def main():
                             disp_gt_2 = disp_gt_2.squeeze(1).type(torch.int64).clamp(0, max_disp//8 - 1)
                             presoftmax = presoftmax.squeeze(1)
                             loss = F.cross_entropy(presoftmax, disp_gt_2, reduction="mean")
+
+                            loss += torch.abs(disp_gt - disp_pred_left).mean() * 1.0
                         if loss_type == "active_stereo":
                             loss = crit(irl, irr, disp_pred_left)
 
@@ -141,7 +184,7 @@ def main():
 
 
                     # todo: show reprojected
-                    if True:
+                    if args.debug_output:
                         cv2.imshow("irl", irl[0,0,:,:].detach().cpu().numpy())
                         cv2.imshow("irr", irr[0,0,:,:].detach().cpu().numpy())
 

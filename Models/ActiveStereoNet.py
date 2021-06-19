@@ -177,8 +177,8 @@ class RefineNet(nn.Module):
         self.resblock2_s2 = ResBlock(16, 16, 3, 1, 2)
 
         # cat
-        self.resblock3 = ResBlock(32, 32, 3, 1, 4)
-        self.resblock4 = ResBlock(32, 32, 3, 1, 8)
+        self.resblock3 = ResBlock(32, 32, 3, 1, 4) # todo: find out why padding of 4?
+        self.resblock4 = ResBlock(32, 32, 3, 1, 8) # todo: find out why padding of 8?
         self.resblock5 = ResBlock(32, 32, 3, 1, 1)
         self.resblock6 = ResBlock(32, 32, 3, 1, 1)
         self.conv2 = conv_block(32, 1, 3, 1)
@@ -230,7 +230,7 @@ class InvalidationNet(nn.Module):
         features = torch.cat((left_tower, right_tower), 1)
         out1 = self.resblocks1(features)
         out1 = self.conv1(out1)
-
+        #todo: some kind of upsampling here?
         input = torch.cat((left_img, out1, freso_disp), 1)
         
         out2 = self.conv2(input)
@@ -249,7 +249,8 @@ class ActiveStereoNet(nn.Module):
         self.SiameseTower = SiameseTower2(scale_factor, ch_in=ch_in)
         self.CoarseNet = CoarseNet(maxdisp, scale_factor, img_shape)
         self.RefineNet = RefineNet(ch_in=ch_in)
-        #self.InvalidationNet = InvalidationNet()
+        self.InvalidationNet = InvalidationNet()
+        self.two_sided = False
         self.img_shpae = img_shape
 
 
@@ -284,6 +285,8 @@ class ActiveStereoNet(nn.Module):
         #print(f"refinement {res_disp.mean()}")
         ref_pred = coarseup_pred + res_disp
         #ref_pred = coarseup_pred #debug: get rid of the refine step
+
+        #invalidation = self.InvalidationNet()
 
         return F.leaky_relu(ref_pred), coarseup_pred, presoftmax#nn.ReLU(False)(ref_pred)
 
