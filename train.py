@@ -5,17 +5,19 @@ from Data.structure_core import StructureCoreCapturedDataset, StructureCoreRende
 from Models.ActiveStereoNet import ActiveStereoNet
 from Losses.supervise import *
 import cv2
+import math
 
 
 def main():
-    fully_supervised = True
+    loss_type = "active_stereo" #"fully_supervised" "classification" "active_stereo"
+    #fully_supervised = True
     dataset_path = "/home/simon/datasets/structure_core/sequences_combined"
     #dataset_path = "/media/simon/ext_ssd/datasets/structure_core/sequences_combined"
-    if fully_supervised:
+    if loss_type in ["fully_supervised", "classification"]:
         dataset_path = "/media/simon/ext_ssd/datasets/structure_core_unity_3"
 
 
-    experiment_name = "test6"
+    experiment_name = "active_stereo_2"
     batch_size = 2#2 in the example
     num_workers = 8
     crop_size = [608, 448]#[1216, 896]# [960, 540] original sceneflow resolution [1280, 720] would be for activestereonet
@@ -25,8 +27,10 @@ def main():
         crop_size = [int(crop_size[0] / 2), int(crop_size[1] / 2)]
     max_disp = 144
     scale_factor = 8
-
     lr_init = 1e-3
+    lr_init = 1e-1 # this seemed to work quite well
+    lr_init = 1
+    lr_init = 1e-4
     scheduler_gamma = 0.5
     step_scale = 4
     scheduler_milestones = [int(20000 * step_scale),
@@ -36,7 +40,7 @@ def main():
     overall_steps = int(60000 * step_scale)
 
     model = ActiveStereoNet(max_disp, scale_factor, crop_size, ch_in=1)
-    model = torch.load("trained_models/test6_chk.pt")
+    model = torch.load("trained_models/active_stereo_1_chk.pt")
     model = model.cuda()
 
     crit = XTLoss(max_disp, ch_in=1)
@@ -44,7 +48,7 @@ def main():
 
     datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
                    for x in ['train', 'val']}
-    if fully_supervised:
+    if loss_type in ["fully_supervised", "classification"]:
         datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
                     for x in ['train', 'val']}
 
@@ -53,8 +57,8 @@ def main():
                    for x in ['train', 'val']}
 
 
-    #optimizer = optim.RMSprop(model.parameters(), lr=lr_init)
-    optimizer = optim.Adam(model.parameters(), lr=lr_init)
+    #optimizer = optim.RMSprop(model.parameters(), lr=lr_init, weight_decay=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=lr_init, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=scheduler_milestones,
                                                gamma=scheduler_gamma)
 
@@ -88,12 +92,18 @@ def main():
 
                 if phase == "train":
                     optimizer.zero_grad()
-                    disp_pred_left, coarsedisp_pred_left, debug_presoftmax = model(irl, irr)
+                    disp_pred_left, coarsedisp_pred_left, presoftmax = model(irl, irr)
                     #debug_presoftmax.retain_grad() # debug remove
-                    if fully_supervised:
-                        loss = torch.abs(disp_gt - disp_pred_left).mean() * 0.0
+                    if loss_type == "fully_supervised":
+                        loss = torch.abs(disp_gt - disp_pred_left).mean() * 1.0
                         loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
-                    else:
+                    if loss_type == "classification":
+                        disp_gt_2 = F.interpolate(disp_gt, (disp_gt.shape[2] // 8, disp_gt.shape[3] // 8 ))
+                        disp_gt_2 = ((disp_gt_2 + 4) // 8)
+                        disp_gt_2 = disp_gt_2.squeeze(1).type(torch.int64).clamp(0, max_disp//8 - 1)
+                        presoftmax = presoftmax.squeeze(1)
+                        loss = F.cross_entropy(presoftmax, disp_gt_2, reduction="mean")
+                    if loss_type == "active_stereo":
                         loss = crit(irl, irr, disp_pred_left)
 
                     #disp_pred_left.retain_grad()# todo: debug remove
@@ -107,16 +117,23 @@ def main():
 
                 else:
                     with torch.no_grad():
-                        disp_pred_left, coarsedisp_pred_left, _ = model(irl, irr)
+                        disp_pred_left, coarsedisp_pred_left, presoftmax = model(irl, irr)
 
-                        if fully_supervised:
-                            loss = torch.abs(disp_gt - disp_pred_left).mean() * 0.0
+                        if loss_type == "fully_supervised":
+                            loss = torch.abs(disp_gt - disp_pred_left).mean() * 1.0
                             loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
-                        else:
+                        if loss_type == "classification":
+                            disp_gt_2 = F.interpolate(disp_gt, (disp_gt.shape[2] // 8, disp_gt.shape[3] // 8 ))
+                            disp_gt_2 = ((disp_gt_2 + 4) // 8)
+                            disp_gt_2 = disp_gt_2.squeeze(1).type(torch.int64).clamp(0, max_disp//8 - 1)
+                            presoftmax = presoftmax.squeeze(1)
+                            loss = F.cross_entropy(presoftmax, disp_gt_2, reduction="mean")
+                        if loss_type == "active_stereo":
                             loss = crit(irl, irr, disp_pred_left)
 
                         loss = loss.item()
 
+                assert not math.isnan(loss) and not math.isinf(loss), "NAN/INF found. ABORT!"
                 loss_accu += loss
                 loss_accu_sub += loss
                 step += 1
@@ -128,25 +145,34 @@ def main():
                         cv2.imshow("irl", irl[0,0,:,:].detach().cpu().numpy())
                         cv2.imshow("irr", irr[0,0,:,:].detach().cpu().numpy())
 
-                        theta = torch.Tensor(
-                            [[1, 0, 0],  # 控制左右，-右，+左
-                             [0, 1, 0]]  # 控制上下，-下，+上
-                        )
-                        theta = theta.repeat(irl.size()[0], 1, 1)
-                        grid = F.affine_grid(theta, irl.size(), align_corners=True)  # enable old behaviour
-                        # print(grid)
-                        grid = grid.cuda()
-                        dispmap_norm = disp_gt * 2 / disp_gt.shape[3] # times 2 because grid_sample normalizes between -1 and 1!
+                        if "disp_gt" in vars():
+                            theta = torch.Tensor(
+                                [[1, 0, 0],  # 控制左右，-右，+左
+                                 [0, 1, 0]]  # 控制上下，-下，+上
+                            )
+                            theta = theta.repeat(irl.size()[0], 1, 1)
+                            grid = F.affine_grid(theta, irl.size(), align_corners=True)  # enable old behaviour
+                            # print(grid)
+                            grid = grid.cuda()
+                            dispmap_norm = disp_gt * 2 / disp_gt.shape[3] # times 2 because grid_sample normalizes between -1 and 1!
 
-                        dispmap_norm = dispmap_norm.squeeze(1).unsqueeze(3)
-                        # print(dispmap_norm.shape)
-                        dispmap_norm = torch.cat((dispmap_norm, torch.zeros(dispmap_norm.size()).cuda()), dim=3)
-                        # print(dispmap_norm.shape)
-                        grid -= dispmap_norm
+                            dispmap_norm = dispmap_norm.squeeze(1).unsqueeze(3)
+                            # print(dispmap_norm.shape)
+                            dispmap_norm = torch.cat((dispmap_norm, torch.zeros(dispmap_norm.size()).cuda()), dim=3)
+                            # print(dispmap_norm.shape)
+                            grid -= dispmap_norm
 
-                        recon_img = F.grid_sample(irr, grid, align_corners=True)  # enable old behaviour
+                            recon_img = F.grid_sample(irr, grid, align_corners=True)  # enable old behaviour
 
-                        cv2.imshow("recon_img", recon_img[0,0,:,:].detach().cpu().numpy())
+                            cv2.imshow("recon_img", recon_img[0,0,:,:].detach().cpu().numpy())
+
+                            print(f"disp_gt.max {disp_gt.max()}")
+                            print(f"disp_gt.min {disp_gt.min()}")
+                            print(f"disp_gt.mean {disp_gt.mean()}")
+                            disp_gt = disp_gt[0, 0, :, :]
+                            disp_gt -= disp_gt.min()
+                            disp_gt /= disp_gt.max() + 0.1
+                            cv2.imshow("disp_gt", disp_gt.detach().cpu().numpy())
 
                         print(f"pred.max {disp_pred_left.max()}")
                         print(f"pred.min {disp_pred_left.min()}")
@@ -166,14 +192,9 @@ def main():
                         coarsedisp_pred_left /= coarsedisp_pred_left.max() + 0.1
                         cv2.imshow("coarsedisp_pred_left", coarsedisp_pred_left.detach().cpu().numpy())
 
-                        print(f"disp_gt.max {disp_gt.max()}")
-                        print(f"disp_gt.min {disp_gt.min()}")
-                        print(f"disp_gt.mean {disp_gt.mean()}")
-                        disp_gt = disp_gt[0, 0, :, :]
-                        disp_gt -= disp_gt.min()
-                        disp_gt /= disp_gt.max() + 0.1
-                        cv2.imshow("disp_gt", disp_gt.detach().cpu().numpy())
                         cv2.waitKey(100)
+
+
                     loss = loss_accu_sub / 100
                     loss_accu_sub = 0
                     print(f"step {step} with loss {loss}")

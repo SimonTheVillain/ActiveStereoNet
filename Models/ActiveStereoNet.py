@@ -57,43 +57,66 @@ class SiameseTower2(nn.Module):
         return out
 
 class CoarseNet(nn.Module):
-    def __init__(self, maxdisp, scale_factor, img_shape):
+    def __init__(self, maxdisp, scale_factor, img_shape, concatenate=False):
         super(CoarseNet, self).__init__()
         self.maxdisp = maxdisp
         self.scale_factor = scale_factor
         self.img_shape = img_shape
+        self.concatenate = concatenate
 
         self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-        self.conv3d_1 = conv3d_block(64, 32, 3, 1, norm='bn', act='lrelu')
+        if concatenate:
+            self.conv3d_1 = conv3d_block(64, 32, 3, 1, norm='bn', act='lrelu')
+        else:
+            self.conv3d_1 = conv3d_block(32, 32, 3, 1, norm='bn', act='lrelu')
         self.conv3d_2 = conv3d_block(32, 32, 3, 1, norm='bn', act='lrelu')
         self.conv3d_3 = conv3d_block(32, 32, 3, 1, norm='bn', act='lrelu')
         self.conv3d_4 = conv3d_block(32, 32, 3, 1, norm='bn', act='lrelu')
 
         self.conv3d_5 = conv3d_block(32, 1, 3, 1, norm=None, act=None)
         self.disp_reg = DisparityRegression(self.maxdisp)
+        self.disp_reg2 = DisparityRegression(self.maxdisp//scale_factor)
 
     def costVolume(self, refimg_fea, targetimg_fea, views):
-        #Cost Volume
-        cost = torch.zeros(refimg_fea.size()[0], refimg_fea.size()[1]*2, self.maxdisp//self.scale_factor, refimg_fea.size()[2], refimg_fea.size()[3]).cuda()
-        views = views.lower()
-        if views == 'left':
-            for i in range(self.maxdisp//self.scale_factor):
-                if i > 0:
-                    cost[:, :refimg_fea.size()[1], i, :, i:] = refimg_fea[:,:,:,i:]
-                    cost[:, refimg_fea.size()[1]:, i, :, i:] = targetimg_fea[:,:,:,:-i]
-                else:
-                    cost[:, :refimg_fea.size()[1], i, :,:] = refimg_fea
-                    cost[:, refimg_fea.size()[1]:, i, :,:] = targetimg_fea
-        elif views == 'right':
-            for i in range(self.maxdisp // self.scale_factor):
-                if i > 0:
-                    cost[:, :refimg_fea.size()[1], i, :, :-i] = refimg_fea[:,:,:,i:]
-                    cost[:, refimg_fea.size()[1]:, i, :, :-i] = targetimg_fea[:,:,:,:-i]
-                else:
-                    cost[:, :refimg_fea.size()[1], i, :,:] = refimg_fea
-                    cost[:, refimg_fea.size()[1]:, i, :,:] = targetimg_fea
-        return cost
+        if self.concatenate:
+            #Cost Volume64
+            cost = torch.zeros(refimg_fea.size()[0], refimg_fea.size()[1]*2, self.maxdisp//self.scale_factor, refimg_fea.size()[2], refimg_fea.size()[3]).cuda()
+            views = views.lower()
+            if views == 'left':
+                for i in range(self.maxdisp//self.scale_factor):
+                    if i > 0:
+                        cost[:, :refimg_fea.size()[1], i, :, i:] = refimg_fea[:,:,:,i:] # the left image
+                        cost[:, refimg_fea.size()[1]:, i, :, i:] = targetimg_fea[:,:,:,:-i]
+                    else:
+                        cost[:, :refimg_fea.size()[1], i, :,:] = refimg_fea
+                        cost[:, refimg_fea.size()[1]:, i, :,:] = targetimg_fea
+            elif views == 'right':
+                for i in range(self.maxdisp // self.scale_factor):
+                    if i > 0:
+                        cost[:, :refimg_fea.size()[1], i, :, :-i] = refimg_fea[:,:,:,i:]
+                        cost[:, refimg_fea.size()[1]:, i, :, :-i] = targetimg_fea[:,:,:,:-i]
+                    else:
+                        cost[:, :refimg_fea.size()[1], i, :,:] = refimg_fea
+                        cost[:, refimg_fea.size()[1]:, i, :,:] = targetimg_fea
+            return cost
+        else:
+            #Cost Volume32
+            cost = torch.zeros(refimg_fea.size()[0], refimg_fea.size()[1], self.maxdisp//self.scale_factor, refimg_fea.size()[2], refimg_fea.size()[3]).cuda()
+            views = views.lower()
+            if views == 'left':
+                for i in range(self.maxdisp//self.scale_factor):
+                    if i > 0:
+                        cost[:, :, i, :, i:] = refimg_fea[:,:,:,i:] - targetimg_fea[:,:,:,:-i] # the left image
+                    else:
+                        cost[:, :, i, :,:] = refimg_fea - targetimg_fea
+            elif views == 'right':
+                for i in range(self.maxdisp // self.scale_factor):
+                    if i > 0:
+                        cost[:, :, i, :, :-i] = refimg_fea[:,:,:,i:] - targetimg_fea[:,:,:,:-i]
+                    else:
+                        cost[:, :, i, :,:] = refimg_fea - targetimg_fea
+            return cost
 
     def Coarsepred(self, cost):
         #pdb.set_trace()
@@ -103,14 +126,22 @@ class CoarseNet(nn.Module):
         cost = self.conv3d_4(cost) + cost
         
         cost = self.conv3d_5(cost)
+        #the old code did the upsampling before classification
         #pdb.set_trace()
-        cost = F.interpolate(cost, size=[self.maxdisp, self.img_shape[1], self.img_shape[0]], mode='trilinear', align_corners=False)
+        #cost = F.interpolate(cost, size=[self.maxdisp, self.img_shape[1], self.img_shape[0]], mode='trilinear', align_corners=False)
         #pdb.set_trace()
-        debug_presoftmax = cost
-        pred = cost.softmax(dim=2).squeeze(dim=1)
-        pred = self.disp_reg(pred)
+        #debug_presoftmax = cost
+        #pred = cost.softmax(dim=2).squeeze(dim=1)
+        #pred = self.disp_reg(pred)
 
-        return pred, debug_presoftmax
+        #lets try doing the upsampling after
+        presoftmax = cost
+        pred = cost.softmax(dim=2).squeeze(dim=1)
+        pred = self.disp_reg2(pred) * self.scale_factor
+        pred = F.interpolate(pred, size=[self.img_shape[1], self.img_shape[0]], mode='bilinear', align_corners=False)
+
+
+        return pred, presoftmax
     
     def forward(self, refimg_fea, targetimg_fea):
         '''
@@ -122,10 +153,10 @@ class CoarseNet(nn.Module):
         cost_left = self.costVolume(refimg_fea, targetimg_fea, 'left')
         #cost_right = self.costVolume(refimg_fea, targetimg_fea, 'right')
 
-        pred_left, debug_presoftmax = self.Coarsepred(cost_left)
+        pred_left, presoftmax = self.Coarsepred(cost_left)
         #pred_right = self.Coarsepred(cost_right)
 
-        return pred_left, debug_presoftmax#, pred_right
+        return pred_left, presoftmax#, pred_right
         
 
 
@@ -246,7 +277,7 @@ class ActiveStereoNet(nn.Module):
         left_tower = self.SiameseTower(left)
         right_tower = self.SiameseTower(right)
         #pdb.set_trace()
-        coarseup_pred, debug_presoftmax = self.CoarseNet(left_tower, right_tower)
+        coarseup_pred, presoftmax = self.CoarseNet(left_tower, right_tower)
         #print(f"coarse {coarseup_pred.mean()}")
         #print(coarseup_pred.shape)
         res_disp = self.RefineNet(left, coarseup_pred)
@@ -254,5 +285,5 @@ class ActiveStereoNet(nn.Module):
         ref_pred = coarseup_pred + res_disp
         #ref_pred = coarseup_pred #debug: get rid of the refine step
 
-        return F.leaky_relu(ref_pred), coarseup_pred, debug_presoftmax#nn.ReLU(False)(ref_pred)
+        return F.leaky_relu(ref_pred), coarseup_pred, presoftmax#nn.ReLU(False)(ref_pred)
 

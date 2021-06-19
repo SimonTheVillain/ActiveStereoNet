@@ -75,10 +75,10 @@ class XTLoss(nn.Module):
         #recon_img = F.grid_sample(right_img, grid)
         recon_img = F.grid_sample(right_img, grid, align_corners=True)#enable old behaviour
 
-        if True:
+        if False:
             disp_pred_left = dispmap[0, 0, :, :].clone()
             disp_pred_left -= disp_pred_left.min()
-            disp_pred_left /= disp_pred_left.max()
+            disp_pred_left /= disp_pred_left.max() + 0.1
             cv2.imshow("dispmap", disp_pred_left.clone().detach().cpu().numpy())
 
             cv2.imshow("recon_img", recon_img[0, 0, :, :].clone().detach().cpu().numpy())
