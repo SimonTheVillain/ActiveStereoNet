@@ -79,7 +79,8 @@ def main():
     overall_steps = int(60000 * step_scale)
 
     model = ActiveStereoNet(max_disp, scale_factor, crop_size, ch_in=1)
-    #model = torch.load("trained_models/active_stereo_1_chk.pt")
+    if not args.load_checkpoint == "":
+        model = torch.load(f"trained_models/{args.load_checkpoint}")
     model = model.cuda()
 
     crit = XTLoss(max_disp, ch_in=1)

@@ -88,6 +88,8 @@ class StructureCoreRenderedDataset(Dataset):
         self.keys = []
 
         files = os.listdir(data_root)
+        if len(files) == 0:
+            print(f"no files in {data_root}")
         #print(files)
         keys = []
         for file in files:
