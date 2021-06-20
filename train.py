@@ -137,7 +137,7 @@ def main():
                     #debug_presoftmax.retain_grad() # debug remove
                     if loss_type == "fully_supervised":
                         loss = torch.abs(disp_gt - disp_pred_left).mean() * 1.0
-                        loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
+                        #loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
                     if loss_type == "classification":
                         disp_gt_2 = F.interpolate(disp_gt, (disp_gt.shape[2] // 8, disp_gt.shape[3] // 8 ))
                         disp_gt_2 = ((disp_gt_2 + 4) // 8)
@@ -164,7 +164,7 @@ def main():
 
                         if loss_type == "fully_supervised":
                             loss = torch.abs(disp_gt - disp_pred_left).mean() * 1.0
-                            loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
+                            #loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
                         if loss_type == "classification":
                             disp_gt_2 = F.interpolate(disp_gt, (disp_gt.shape[2] // 8, disp_gt.shape[3] // 8 ))
                             disp_gt_2 = ((disp_gt_2 + 4) // 8)
