@@ -38,6 +38,11 @@ def main():
                         help="Enables debug output for our training.",
                         type=bool,
                         default=False)
+
+    parser.add_argument("-bs", "--batch_size", dest="batch_size", action="store",
+                        help="Batch size",
+                        type=int,
+                        default=1)
     args = parser.parse_args()
 
 
@@ -56,6 +61,7 @@ def main():
     experiment_name = "classification_full_1"
     experiment_name = args.experiment_name
     batch_size = 1#2 in the example
+    batch_size = args.batch_size
     num_workers = 8
     crop_size = [608, 448]#[1216, 896]# [960, 540] original sceneflow resolution [1280, 720] would be for activestereonet
     crop_size = [1216, 896]
