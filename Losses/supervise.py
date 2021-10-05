@@ -123,8 +123,9 @@ class XTLoss(nn.Module):
         mean_local = F.conv2d(input=img, weight=w, padding=kSize // 2)
         
         mean_square_local = F.conv2d(input=img ** 2, weight=w, padding=kSize // 2)
-        std_local = (mean_square_local - mean_local ** 2) * (kSize ** 2) / (kSize ** 2 - 1)
-        
+        #std_local = (mean_square_local - mean_local ** 2) * (kSize ** 2) / (kSize ** 2 - 1)
+        std_local = (mean_square_local - mean_local ** 2) # fix by simon!!!!! (why kSize ** 2 - >1< ???)
+
         epsilon = 1e-6
         
         return (img - mean_local) / (std_local + epsilon), mean_local, std_local

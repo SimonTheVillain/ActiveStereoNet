@@ -42,7 +42,12 @@ def main():
     parser.add_argument("-bs", "--batch_size", dest="batch_size", action="store",
                         help="Batch size",
                         type=int,
-                        default=1)
+                        default=4)
+
+    parser.add_argument("--dataset_type", dest="dataset_type", action="store",
+                        help="Type of the dataset \"rendered\" or \"captured\" for the structure core data.",
+                        type=str,
+                        default="captured")
     args = parser.parse_args()
 
 
@@ -63,7 +68,6 @@ def main():
     batch_size = 1#2 in the example
     batch_size = args.batch_size
     num_workers = 8
-    crop_size = [608, 448]#[1216, 896]# [960, 540] original sceneflow resolution [1280, 720] would be for activestereonet
     crop_size = [1216, 896]
     crop_size = [crop_size[0] // args.scale, crop_size[1] // args.scale]
     half_res = False
@@ -93,8 +97,13 @@ def main():
     #crit = RHLoss(max_disp)
 
     if loss_type == "active_stereo":
-        datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
-                       for x in ['train', 'val']}
+        if args.dataset_type == "catpured":
+            datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
+                           for x in ['train', 'val']}
+        if args.dataset_type == "unity":
+            datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
+                           for x in ['train', 'val']}
+
     if loss_type in ["fully_supervised", "classification"]:
         datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
                     for x in ['train', 'val']}

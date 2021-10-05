@@ -16,7 +16,6 @@ class StructureCoreCapturedDataset(Dataset):
         self.data_root = data_root
         self.phase = phase
         self.halfres = halfres
-        #self.transform = transform
 
         self.scene_paths = []
 
@@ -35,12 +34,11 @@ class StructureCoreCapturedDataset(Dataset):
             self.idx_from = int(len(self.scene_paths) * 0.95)
             self.idx_to = len(self.scene_paths)
 
-        #todo: replace with assert
         assert self.__len__() > 0, f"Captured dataset error: No sequences in {data_root}"
-
 
     def __len__(self):
         return (self.idx_to - self.idx_from) * 4
+
     def __getitem__(self, idx):
         scene_idx = int(idx / 4) + self.idx_from
         frame_idx = idx % 4
@@ -66,12 +64,15 @@ class StructureCoreCapturedDataset(Dataset):
 
         return irl, irr
 
+
 #todo: this! + the same thing for a rendered dataset!!!!!!
 class StructureCoreRenderedDataset(Dataset):
 
-    def __init__(self, data_root, phase, crop_size=None, halfres=False):
+    def __init__(self, data_root, phase, crop_size=None, halfres=False, enable_gt_disp=True):
+
         super(StructureCoreRenderedDataset, self).__init__()
 
+        self.enable_gt_disp = enable_gt_disp
         self.crop_size = crop_size
         self.data_root = data_root
         self.phase = phase
@@ -114,9 +115,9 @@ class StructureCoreRenderedDataset(Dataset):
             self.idx_from = int(len(self.keys) * 0.95)
             self.idx_to = len(self.keys)
 
-
     def __len__(self):
         return self.idx_to - self.idx_from
+
     def __getitem__(self, idx):
         idx += self.idx_from
         key = self.keys[idx]
@@ -176,7 +177,10 @@ class StructureCoreRenderedDataset(Dataset):
         irr = np.expand_dims(irr, 0)
         disp = np.expand_dims(disp, 0)
 
-        return irl, irr, disp
+        if self.enable_gt_disp:
+            return irl, irr, disp
+        else:
+            return irl, irr
 
 
 def test_dataset():
@@ -188,6 +192,7 @@ def test_dataset():
         cv2.imshow("irl", irl[0, :, :])
         cv2.imshow("irr", irr[0, :, :])
         cv2.waitKey()
+
 
 if __name__ == "__main__":
     test_dataset()
