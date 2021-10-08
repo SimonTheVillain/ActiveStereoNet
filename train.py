@@ -97,7 +97,7 @@ def main():
     #crit = RHLoss(max_disp)
 
     if loss_type == "active_stereo":
-        if args.dataset_type == "catpured":
+        if args.dataset_type == "captured":
             datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
                            for x in ['train', 'val']}
         if args.dataset_type == "unity":
