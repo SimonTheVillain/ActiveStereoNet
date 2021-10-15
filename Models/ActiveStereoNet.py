@@ -120,10 +120,16 @@ class CoarseNet(nn.Module):
 
     def Coarsepred(self, cost):
         #pdb.set_trace()
+        #cost = self.conv3d_1(cost)
+        #cost = self.conv3d_2(cost) + cost
+        #cost = self.conv3d_3(cost) + cost
+        #cost = self.conv3d_4(cost) + cost
+
+        #this isn't in
         cost = self.conv3d_1(cost)
-        cost = self.conv3d_2(cost) + cost
-        cost = self.conv3d_3(cost) + cost
-        cost = self.conv3d_4(cost) + cost
+        cost = self.conv3d_2(cost)
+        cost = self.conv3d_3(cost)
+        cost = self.conv3d_4(cost)
         
         cost = self.conv3d_5(cost)
         #the old code did the upsampling before classification
@@ -247,7 +253,8 @@ class ActiveStereoNet(nn.Module):
         self.maxdisp = maxdisp
         self.scale_factor = scale_factor
         self.SiameseTower = SiameseTower2(scale_factor, ch_in=ch_in)
-        self.CoarseNet = CoarseNet(maxdisp, scale_factor, img_shape)
+        # TODO: the original stereoNet paper is subtracting (so no concatenation)
+        self.CoarseNet = CoarseNet(maxdisp, scale_factor, img_shape, concatenate=False)
         self.RefineNet = RefineNet(ch_in=ch_in)
         self.InvalidationNet = InvalidationNet()
         self.two_sided = False
