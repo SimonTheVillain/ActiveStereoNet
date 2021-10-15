@@ -63,14 +63,12 @@ def main():
     if dataset_path == "":
         print("error! provide dataset_path (--path ...)")
         return
-    experiment_name = "classification_full_1"
     experiment_name = args.experiment_name
-    batch_size = 1#2 in the example
     batch_size = args.batch_size
     num_workers = 8
     crop_size = [1216, 896]
     crop_size = [crop_size[0] // args.scale, crop_size[1] // args.scale]
-    half_res = False
+    half_res = True
     if half_res:
         crop_size = [int(crop_size[0] / 2), int(crop_size[1] / 2)]
     max_disp = 144
@@ -182,7 +180,7 @@ def main():
                             #loss += torch.abs(disp_gt - coarsedisp_pred_left).mean()
                         if loss_type == "classification":
                             disp_gt_2 = F.interpolate(disp_gt, (disp_gt.shape[2] // 8, disp_gt.shape[3] // 8 ))
-                            disp_gt_2 = ((disp_gt_2 + 4) // 8)
+                            disp_gt_2 = ((disp_gt_2 + 4) // 8) # + 4 for nearest interpolation
                             disp_gt_2 = disp_gt_2.squeeze(1).type(torch.int64).clamp(0, max_disp//8 - 1)
                             presoftmax = presoftmax.squeeze(1)
                             loss = F.cross_entropy(presoftmax, disp_gt_2, reduction="mean")

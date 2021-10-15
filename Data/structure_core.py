@@ -4,6 +4,11 @@ import numpy as np
 
 from torch.utils.data import Dataset
 
+def downsampleDisp(d):
+    d = d.reshape(int(d.shape[0] / 2), 2, int(d.shape[1] / 2), 2)
+    d = np.max(d, axis=3)
+    d = np.max(d, axis=1)
+    return d
 
 #todo: this! + the same thing for a rendered dataset!!!!!!
 class StructureCoreCapturedDataset(Dataset):
@@ -150,6 +155,8 @@ class StructureCoreRenderedDataset(Dataset):
         if self.halfres:
             irl = cv2.resize(irl, (int(irl.shape[1] / 2), int(irl.shape[0] / 2)))
             irr = cv2.resize(irr, (int(irr.shape[1] / 2), int(irr.shape[0] / 2)))
+            disp = downsampleDisp(disp) / 2
+            #disp = cv2.resize(irr, (int(irr.shape[1] / 2), int(irr.shape[0] / 2)))
 
         irl = irl.astype(np.float32) * (1.0 / 255.0)
         irr = irr.astype(np.float32) * (1.0 / 255.0)
