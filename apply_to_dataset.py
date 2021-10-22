@@ -5,9 +5,10 @@ import numpy as np
 import re
 
 
-model = torch.load("trained_models/train_structure_unity_1_chk.pt")
+model = torch.load("trained_models/train_structure_unity_pretrain_1_chk.pt")
+model = torch.load("trained_models/train_structure_unity_full_supervision_2.pt")
 rendered = True
-half_res = False
+half_res = True
 focal = 1
 baseline = 1
 if rendered:
@@ -21,24 +22,30 @@ if rendered:
 
     rr = (src_cxy[0] - tgt_cxy[0], src_cxy[1] - tgt_cxy[1], tgt_res[0], tgt_res[1])
     path = "/media/simon/ssd_datasets/datasets/structure_core_unity_test"
+
+    path = "/media/simon/LaCie/datasets/structure_core_unity_test"
     path_out = "/media/simon/ssd_datasets/datasets/structure_core_unity_test_results/ActiveStereoNet"
     inds = os.listdir(path)
     inds  = [re.search(r'\d+', s).group() for s in inds]
     inds = set(inds)
     inds = list(inds)
     inds.sort()
+    paths = []
+    for ind in inds:
+        paths.append((ind, path + f"/{ind}_left.jpg", path + f"/{ind}_right.jpg"))
 else:
     pass
 
 with torch.no_grad():
-    for ind in inds:
-        p = path + f"/{ind}_left.jpg"
+    for ind, pl, pr in paths:
+        p = pl
         irl = cv2.imread(p, cv2.IMREAD_UNCHANGED)
         irl = cv2.cvtColor(irl, cv2.COLOR_RGB2GRAY)
         irl = irl[rr[1]:rr[1] + rr[3], rr[0]:rr[0] + rr[2]]
         irl = irl.astype(np.float32) * (1.0 / 255.0)
 
-        p = path + f"/{ind}_right.jpg"
+        p = pr
+
         irr = cv2.imread(p, cv2.IMREAD_UNCHANGED)
         irr = cv2.cvtColor(irr, cv2.COLOR_RGB2GRAY)
         irr = irr[rr[1]:rr[1] + rr[3], rr[0]:rr[0] + rr[2]]
@@ -57,12 +64,13 @@ with torch.no_grad():
 
         ref_pred, coresup_pred, presoftmax = model(irl, irr)
 
-        result = coresup_pred.cpu()[0, 0, :, :].numpy()
+        result = ref_pred.cpu()[0, 0, :, :].numpy()
+        #result = coresup_pred.cpu()[0, 0, :, :].numpy()
 
         p = path_out + f"/{int(ind):05d}.exr"
-        cv2.imshow("result", result * (1.0 / 8.0))
+        cv2.imshow("result", result * (1.0 / 50.0))
         cv2.imwrite(p, result)
-        cv2.waitKey()
+        cv2.waitKey(1)
         print(p)
 
 
