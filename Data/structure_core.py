@@ -1,8 +1,8 @@
 import cv2
 import os
 import numpy as np
-
 from torch.utils.data import Dataset
+from pathlib import Path
 
 def downsampleDisp(d):
     d = d.reshape(int(d.shape[0] / 2), 2, int(d.shape[1] / 2), 2)
@@ -73,7 +73,7 @@ class StructureCoreCapturedDataset(Dataset):
 #todo: this! + the same thing for a rendered dataset!!!!!!
 class StructureCoreRenderedDataset(Dataset):
 
-    def __init__(self, data_root, phase, crop_size=None, halfres=False, enable_gt_disp=True):
+    def __init__(self, data_root, phase, crop_size=None, halfres=False, enable_gt_disp=True, sequences=False):
 
         super(StructureCoreRenderedDataset, self).__init__()
 
@@ -84,6 +84,7 @@ class StructureCoreRenderedDataset(Dataset):
         self.halfres = halfres
         self.baseline = 0.07501
         self.focal = 1.1154399414062500e+03
+        self.sequences = sequences
 
 
         self.src_res = (1401, 1001)
@@ -94,100 +95,182 @@ class StructureCoreRenderedDataset(Dataset):
                              self.tgt_res[0], self.tgt_res[1])
         #self.transform = transform
 
-        self.keys = []
+        if self.sequences:
+            sequences = os.listdir(data_root)
 
-        files = os.listdir(data_root)
-        if len(files) == 0:
-            print(f"no files in {data_root}")
-            exit()
-        #print(files)
-        keys = []
-        for file in files:
-            if os.path.isfile(f"{data_root}/{file}"):
-                keys.append(file.split("_")[0])
+            paths = [Path(data_root) / x for x in sequences if os.path.isdir(Path(data_root) / x)]
+            paths.sort()
+            if phase == "train":
+                self.sequence_paths = paths[:-64]
+                self.use_all = False
+            if phase == "val":
+                self.sequence_paths = paths[len(paths)-64:]
+                self.use_all = True
+        else:
+            self.keys = []
 
-        self.keys = list(set(keys))
+            files = os.listdir(data_root)
+            if len(files) == 0:
+                print(f"no files in {data_root}")
+                exit()
+            #print(files)
+            keys = []
+            for file in files:
+                if os.path.isfile(f"{data_root}/{file}"):
+                    keys.append(file.split("_")[0])
 
-        if len(self.keys) == 0:
-            print(f"no valid files in {data_root}")
-            exit()
+            self.keys = list(set(keys))
 
-        if phase == "train":
-            self.idx_from = 0
-            self.idx_to = int(len(self.keys) * 0.95)
+            if len(self.keys) == 0:
+                print(f"no valid files in {data_root}")
+                exit()
 
-        if phase == "val":
-            self.idx_from = int(len(self.keys) * 0.95)
-            self.idx_to = len(self.keys)
+            if phase == "train":
+                self.idx_from = 0
+                self.idx_to = int(len(self.keys) * 0.95)
+
+            if phase == "val":
+                self.idx_from = int(len(self.keys) * 0.95)
+                self.idx_to = len(self.keys)
 
     def __len__(self):
+        if self.sequences:
+            if self.use_all:
+                return 4 * len(self.sequence_paths)
+            return len(self.sequence_paths)
         return self.idx_to - self.idx_from
 
     def __getitem__(self, idx):
-        idx += self.idx_from
-        key = self.keys[idx]
 
-        rr = self.readout_rect
+        if self.sequences:
+            i = idx
+            j = np.random.randint(0, 3)
+            if self.use_all:
+                i = idx // 4
+                j = idx % 4
+            sequence_path = self.sequence_paths[i]
+            rr = self.readout_rect
 
-        filename = os.path.join(self.data_root, f"{key}_left.jpg")
-        irl = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
-        if irl is None:
-            return self.__getitem__(np.random.randint(0, self.__len__()))
-        irl = irl[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2]]
-        assert irl is not None, f"Does file {filename} exist?"
-        filename = os.path.join(self.data_root, f"{key}_right.jpg")
-        irr = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
-        if irr is None:
-            return self.__getitem__(np.random.randint(0, self.__len__()))
+            irl = cv2.imread(f"{sequence_path}/{j}_left.png", cv2.IMREAD_UNCHANGED)
+            if irl is None:
+                return self.__getitem__(np.random.randint(0, self.__len__()))
+            irl = irl[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2]]
+            assert irl is not None, f"Does file {sequence_path}/{j}_left.png exist?"
+            irr = cv2.imread(f"{sequence_path}/{j}_right.png", cv2.IMREAD_UNCHANGED)
+            if irr is None:
+                return self.__getitem__(np.random.randint(0, self.__len__()))
 
-        irr = irr[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2]]
-        assert irr is not None, f"Does file {filename} exist?"
+            irr = irr[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2]]
+            assert irr is not None, f"Does file {sequence_path}/{j}_right.png exist?"
 
-        filename = os.path.join(self.data_root, f"{key}_left_d.exr")
-        d = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
-        if d is None:
-            return self.__getitem__(np.random.randint(0, self.__len__()))
-        d = d[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2]]
-        assert d is not None, f"Does file {filename} exist?"
+            gt = cv2.imread(f"{sequence_path}/{j}_left_gt.exr", cv2.IMREAD_UNCHANGED)
+            if gt is None:
+                return self.__getitem__(np.random.randint(0, self.__len__()))
 
-        disp = self.baseline * self.focal / d
+            d = gt[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2], 0]
+            assert d is not None, f"Does file {sequence_path}/{j}_left_gt.exr exist?"
 
-        if self.halfres:
-            irl = cv2.resize(irl, (int(irl.shape[1] / 2), int(irl.shape[0] / 2)))
-            irr = cv2.resize(irr, (int(irr.shape[1] / 2), int(irr.shape[0] / 2)))
-            disp = downsampleDisp(disp) / 2
-            #disp = cv2.resize(irr, (int(irr.shape[1] / 2), int(irr.shape[0] / 2)))
+            disp = self.baseline * self.focal / d
 
-        irl = irl.astype(np.float32) * (1.0 / 255.0)
-        irr = irr.astype(np.float32) * (1.0 / 255.0)
+            if self.halfres:
+                irl = cv2.resize(irl, (int(irl.shape[1] / 2), int(irl.shape[0] / 2)))
+                irr = cv2.resize(irr, (int(irr.shape[1] / 2), int(irr.shape[0] / 2)))
+                disp = downsampleDisp(disp) / 2
+                # disp = cv2.resize(irr, (int(irr.shape[1] / 2), int(irr.shape[0] / 2)))
 
-        channel_weights = np.random.random(3) * 2
-        channel_weights = channel_weights / (np.sum(channel_weights) + 0.01)
+            irl = irl.astype(np.float32) * (1.0 / 255.0)
+            irr = irr.astype(np.float32) * (1.0 / 255.0)
 
-        irl = irl[:, :, 0] * channel_weights[0] + \
-               irl[:, :, 1] * channel_weights[1] + \
-               irl[:, :, 2] * channel_weights[2]
+            channel_weights = np.random.random(3) * 2
+            channel_weights = channel_weights / (np.sum(channel_weights) + 0.01)
 
-        irr = irr[:, :, 0] * channel_weights[0] + \
-               irr[:, :, 1] * channel_weights[1] + \
-               irr[:, :, 2] * channel_weights[2]
+            irl = irl[:, :, 0] * channel_weights[0] + \
+                  irl[:, :, 1] * channel_weights[1] + \
+                  irl[:, :, 2] * channel_weights[2]
 
+            irr = irr[:, :, 0] * channel_weights[0] + \
+                  irr[:, :, 1] * channel_weights[1] + \
+                  irr[:, :, 2] * channel_weights[2]
 
+            if self.crop_size is not None:
+                irl = irl[:self.crop_size[1], :self.crop_size[0]]
+                irr = irr[:self.crop_size[1], :self.crop_size[0]]
+                disp = disp[:self.crop_size[1], :self.crop_size[0]]
 
-        if self.crop_size is not None:
-            irl = irl[:self.crop_size[1], :self.crop_size[0]]
-            irr = irr[:self.crop_size[1], :self.crop_size[0]]
-            disp = disp[:self.crop_size[1], :self.crop_size[0]]
+            irl = np.expand_dims(irl, 0)
+            irr = np.expand_dims(irr, 0)
+            disp = np.expand_dims(disp, 0)
 
+            if self.enable_gt_disp:
+                return irl, irr, disp
+            else:
+                return irl, irr
 
-        irl = np.expand_dims(irl, 0)
-        irr = np.expand_dims(irr, 0)
-        disp = np.expand_dims(disp, 0)
-
-        if self.enable_gt_disp:
-            return irl, irr, disp
         else:
-            return irl, irr
+            idx += self.idx_from
+            key = self.keys[idx]
+
+            rr = self.readout_rect
+
+            filename = os.path.join(self.data_root, f"{key}_left.jpg")
+            irl = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+            if irl is None:
+                return self.__getitem__(np.random.randint(0, self.__len__()))
+            irl = irl[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2]]
+            assert irl is not None, f"Does file {filename} exist?"
+            filename = os.path.join(self.data_root, f"{key}_right.jpg")
+            irr = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+            if irr is None:
+                return self.__getitem__(np.random.randint(0, self.__len__()))
+
+            irr = irr[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2]]
+            assert irr is not None, f"Does file {filename} exist?"
+
+            filename = os.path.join(self.data_root, f"{key}_left_d.exr")
+            d = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+            if d is None:
+                return self.__getitem__(np.random.randint(0, self.__len__()))
+            d = d[rr[1]: rr[1] + rr[3], rr[0]: rr[0] + rr[2]]
+            assert d is not None, f"Does file {filename} exist?"
+
+            disp = self.baseline * self.focal / d
+
+            if self.halfres:
+                irl = cv2.resize(irl, (int(irl.shape[1] / 2), int(irl.shape[0] / 2)))
+                irr = cv2.resize(irr, (int(irr.shape[1] / 2), int(irr.shape[0] / 2)))
+                disp = downsampleDisp(disp) / 2
+                #disp = cv2.resize(irr, (int(irr.shape[1] / 2), int(irr.shape[0] / 2)))
+
+            irl = irl.astype(np.float32) * (1.0 / 255.0)
+            irr = irr.astype(np.float32) * (1.0 / 255.0)
+
+            channel_weights = np.random.random(3) * 2
+            channel_weights = channel_weights / (np.sum(channel_weights) + 0.01)
+
+            irl = irl[:, :, 0] * channel_weights[0] + \
+                   irl[:, :, 1] * channel_weights[1] + \
+                   irl[:, :, 2] * channel_weights[2]
+
+            irr = irr[:, :, 0] * channel_weights[0] + \
+                   irr[:, :, 1] * channel_weights[1] + \
+                   irr[:, :, 2] * channel_weights[2]
+
+
+
+            if self.crop_size is not None:
+                irl = irl[:self.crop_size[1], :self.crop_size[0]]
+                irr = irr[:self.crop_size[1], :self.crop_size[0]]
+                disp = disp[:self.crop_size[1], :self.crop_size[0]]
+
+
+            irl = np.expand_dims(irl, 0)
+            irr = np.expand_dims(irr, 0)
+            disp = np.expand_dims(disp, 0)
+
+            if self.enable_gt_disp:
+                return irl, irr, disp
+            else:
+                return irl, irr
 
 
 def test_dataset():

@@ -99,11 +99,13 @@ def main():
             datasets = {x: StructureCoreCapturedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
                            for x in ['train', 'val']}
         if args.dataset_type == "unity":
-            datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
+            datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size,
+                                                        sequences=True)
                            for x in ['train', 'val']}
 
     if loss_type in ["fully_supervised", "classification"]:
-        datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size)
+        datasets = {x: StructureCoreRenderedDataset(dataset_path, phase=x, halfres=half_res, crop_size=crop_size,
+                                                    sequences=True)
                     for x in ['train', 'val']}
 
     dataloaders = {x: torch.utils.data.DataLoader(datasets[x], batch_size=batch_size,
