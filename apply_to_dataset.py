@@ -3,11 +3,12 @@ import os
 import cv2
 import numpy as np
 import re
+from pathlib import Path
 
 
 model = torch.load("trained_models/train_structure_unity_pretrain_1_chk.pt")
 model = torch.load("trained_models/train_structure_unity_full_supervision_2.pt")
-rendered = True
+rendered = False
 half_res = True
 focal = 1
 baseline = 1
@@ -20,7 +21,8 @@ if rendered:
     # the focal length is shared between src and target frame
     focal = 1.1154399414062500e+03
 
-    rr = (src_cxy[0] - tgt_cxy[0], src_cxy[1] - tgt_cxy[1], tgt_res[0], tgt_res[1])
+    rrr = (src_cxy[0] - tgt_cxy[0], src_cxy[1] - tgt_cxy[1], tgt_res[0], tgt_res[1])
+    rrl = (src_cxy[0] - tgt_cxy[0], src_cxy[1] - tgt_cxy[1], tgt_res[0], tgt_res[1])
     path = "/media/simon/ssd_datasets/datasets/structure_core_unity_test"
 
     path = "/media/simon/LaCie/datasets/structure_core_unity_test"
@@ -32,23 +34,56 @@ if rendered:
     inds.sort()
     paths = []
     for ind in inds:
-        paths.append((ind, path + f"/{ind}_left.jpg", path + f"/{ind}_right.jpg"))
+        pout = path_out + f"/{int(ind):05d}.exr"
+        paths.append((path + f"/{ind}_left.jpg", path + f"/{ind}_right.jpg", pout))
 else:
-    pass
+    tgt_res = (1216, 896)
+    tgt_cxy = (604, 457)
+    # the focal length is shared between src and target frame
+    focal = 1.1154399414062500e+03
+
+    rrr = (0, 0, tgt_res[0], tgt_res[1])
+    rrl = (tgt_res[0], 0, tgt_res[0], tgt_res[1])
+    path = "/media/simon/ssd_datasets/datasets/structure_core_photoneo_test"
+    path_out = "/media/simon/ssd_datasets/datasets/structure_core_photoneo_test_results/ActiveStereoNet"
+    folders = os.listdir(path)
+    scenes = [x for x in folders if os.path.isdir(Path(path) / x)]
+
+    paths = []
+    for scene in scenes:
+        tgt_path = Path(path_out) / scene
+        if not os.path.exists(tgt_path):
+            os.mkdir(tgt_path)
+        for i in range(4):
+            pr = Path(path) / scene / f"ir{i}.png"
+            pl = Path(path) / scene / f"ir{i}.png"
+            tgt_pth = Path(tgt_path) / f"{i}.exr"
+            paths.append((str(pl), str(pr), str(tgt_pth)))
 
 with torch.no_grad():
-    for ind, pl, pr in paths:
+    for pl, pr, pout in paths:
         p = pl
         irl = cv2.imread(p, cv2.IMREAD_UNCHANGED)
-        irl = cv2.cvtColor(irl, cv2.COLOR_RGB2GRAY)
-        irl = irl[rr[1]:rr[1] + rr[3], rr[0]:rr[0] + rr[2]]
+        if len(irl.shape) == 3:
+            # the rendered images are 3 channel bgr
+            irl = cv2.cvtColor(irl, cv2.COLOR_BGR2GRAY)
+        else:
+            # the rendered images are 16
+            irl = irl / 255.0
+        irl = irl[rrl[1]:rrl[1] + rrl[3], rrl[0]:rrl[0] + rrl[2]]
+
         irl = irl.astype(np.float32) * (1.0 / 255.0)
 
         p = pr
 
         irr = cv2.imread(p, cv2.IMREAD_UNCHANGED)
-        irr = cv2.cvtColor(irr, cv2.COLOR_RGB2GRAY)
-        irr = irr[rr[1]:rr[1] + rr[3], rr[0]:rr[0] + rr[2]]
+        if len(irr.shape) == 3:
+            # the rendered images are 3 channel bgr
+            irr = cv2.cvtColor(irr, cv2.COLOR_BGR2GRAY)
+        else:
+            # the rendered images are 16
+            irr = irr / 255.0
+        irr = irr[rrr[1]:rrr[1] + rrr[3], rrr[0]:rrr[0] + rrr[2]]
         irr = irr.astype(np.float32) * (1.0 / 255.0)
 
         if half_res:
@@ -67,7 +102,7 @@ with torch.no_grad():
         result = ref_pred.cpu()[0, 0, :, :].numpy()
         #result = coresup_pred.cpu()[0, 0, :, :].numpy()
 
-        p = path_out + f"/{int(ind):05d}.exr"
+        p = pout#path_out + f"/{int(ind):05d}.exr"
         cv2.imshow("result", result * (1.0 / 50.0))
         cv2.imwrite(p, result)
         cv2.waitKey(1)
