@@ -46,7 +46,7 @@ class XTLoss(nn.Module):
 
 
     
-    def forward(self, left_img, right_img, dispmap):
+    def forward(self, left_img, right_img, dispmap, show_debug=False):
 
         n, c, h, w = left_img.shape
         
@@ -75,7 +75,7 @@ class XTLoss(nn.Module):
         #recon_img = F.grid_sample(right_img, grid)
         recon_img = F.grid_sample(right_img, grid, align_corners=True)#enable old behaviour
 
-        if False:
+        if show_debug:
             disp_pred_left = dispmap[0, 0, :, :].clone()
             disp_pred_left -= disp_pred_left.min()
             disp_pred_left /= disp_pred_left.max() + 0.1

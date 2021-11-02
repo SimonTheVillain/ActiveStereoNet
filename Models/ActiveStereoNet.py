@@ -258,7 +258,7 @@ class ActiveStereoNet(nn.Module):
         self.RefineNet = RefineNet(ch_in=ch_in)
         self.InvalidationNet = InvalidationNet()
         self.two_sided = False
-        self.img_shpae = img_shape
+        self.img_shape = img_shape
 
 
         for m in self.modules():

@@ -5,13 +5,19 @@ import numpy as np
 import re
 from pathlib import Path
 
+from Losses.supervise import *
 
-model = torch.load("trained_models/train_structure_unity_pretrain_1_chk.pt")
-model = torch.load("trained_models/train_structure_unity_full_supervision_2.pt")
+
+#model = torch.load("trained_models/train_structure_unity_pretrain_1_chk.pt")
+#model = torch.load("trained_models/train_structure_unity_full_supervision_2.pt")
+model = torch.load("trained_models/pretrain_sequences_new.pt")
+model.img_shape = [304*2, 224*2]# TODO: remove this debug at early possibility
+model.CoarseNet.img_shape = [304*2, 224*2]# TODO: remove this debug at early possibility
 rendered = False
 half_res = True
 focal = 1
-baseline = 1
+baseline_left_right = 0.07501
+baseline_to_projector = 0.0634
 if rendered:
 
     src_res = (1401, 1001)
@@ -26,7 +32,7 @@ if rendered:
     path = "/media/simon/ssd_datasets/datasets/structure_core_unity_test"
 
     path = "/media/simon/LaCie/datasets/structure_core_unity_test"
-    path_out = "/media/simon/ssd_datasets/datasets/structure_core_unity_test_results/ActiveStereoNet"
+    path_out = "/media/simon/ssd_datasets/datasets/structure_core_unity_test_results/ActiveStereoNetv2"
     inds = os.listdir(path)
     inds  = [re.search(r'\d+', s).group() for s in inds]
     inds = set(inds)
@@ -46,6 +52,9 @@ else:
     rrl = (tgt_res[0], 0, tgt_res[0], tgt_res[1])
     path = "/media/simon/ssd_datasets/datasets/structure_core_photoneo_test"
     path_out = "/media/simon/ssd_datasets/datasets/structure_core_photoneo_test_results/ActiveStereoNet"
+
+    path = "/home/simon/datasets/structure_core_photoneo_test"
+    path_out = "/home/simon/datasets/structure_core_photoneo_test_results/ActiveStereoNetv2"
     folders = os.listdir(path)
     scenes = [x for x in folders if os.path.isdir(Path(path) / x)]
 
@@ -60,6 +69,10 @@ else:
             tgt_pth = Path(tgt_path) / f"{i}.exr"
             paths.append((str(pl), str(pr), str(tgt_pth)))
 
+show_reprojection = False
+if show_reprojection:
+    max_disp = 144
+    crit = XTLoss(max_disp, ch_in=1)
 with torch.no_grad():
     for pl, pr, pout in paths:
         p = pl
@@ -99,11 +112,15 @@ with torch.no_grad():
 
         ref_pred, coresup_pred, presoftmax = model(irl, irr)
 
+        if show_reprojection:
+            crit(irl, irr, ref_pred, True)
+
         result = ref_pred.cpu()[0, 0, :, :].numpy()
         #result = coresup_pred.cpu()[0, 0, :, :].numpy()
 
         p = pout#path_out + f"/{int(ind):05d}.exr"
         cv2.imshow("result", result * (1.0 / 50.0))
+        result = result * baseline_to_projector / baseline_left_right
         cv2.imwrite(p, result)
         cv2.waitKey(1)
         print(p)

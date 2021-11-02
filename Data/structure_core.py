@@ -33,10 +33,10 @@ class StructureCoreCapturedDataset(Dataset):
 
         if phase == "train":
             self.idx_from = 0
-            self.idx_to = int(len(self.scene_paths) * 0.95)
+            self.idx_to = len(self.scene_paths)-64
 
         if phase == "val":
-            self.idx_from = int(len(self.scene_paths) * 0.95)
+            self.idx_from = len(self.scene_paths)-64
             self.idx_to = len(self.scene_paths)
 
         assert self.__len__() > 0, f"Captured dataset error: No sequences in {data_root}"
