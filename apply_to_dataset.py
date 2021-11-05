@@ -10,9 +10,7 @@ from Losses.supervise import *
 
 #model = torch.load("trained_models/train_structure_unity_pretrain_1_chk.pt")
 #model = torch.load("trained_models/train_structure_unity_full_supervision_2.pt")
-model = torch.load("trained_models/pretrain_sequences_new.pt")
-model.img_shape = [304*2, 224*2]# TODO: remove this debug at early possibility
-model.CoarseNet.img_shape = [304*2, 224*2]# TODO: remove this debug at early possibility
+
 rendered = False
 half_res = True
 focal = 1
@@ -32,7 +30,15 @@ if rendered:
     path = "/media/simon/ssd_datasets/datasets/structure_core_unity_test"
 
     path = "/media/simon/LaCie/datasets/structure_core_unity_test"
-    path_out = "/media/simon/ssd_datasets/datasets/structure_core_unity_test_results/ActiveStereoNetv2"
+    path_out = "/media/simon/ssd_datasets/datasets/structure_core_unity_test_results/ActiveStereoNet"
+
+    path = "/home/simon/datasets/structure_core_unity_test"
+    path_out = "/home/simon/datasets/structure_core_unity_test_results/ActiveStereoNet"
+    model = torch.load("trained_models/train_unity_new.pt")
+
+    path = "/home/simon/datasets/structure_core_unity_test"
+    path_out = "/home/simon/datasets/structure_core_unity_test_results/ActiveStereoNetFull"
+    model = torch.load("trained_models/pretrain_sequences_new2.pt")
     inds = os.listdir(path)
     inds  = [re.search(r'\d+', s).group() for s in inds]
     inds = set(inds)
@@ -54,7 +60,8 @@ else:
     path_out = "/media/simon/ssd_datasets/datasets/structure_core_photoneo_test_results/ActiveStereoNet"
 
     path = "/home/simon/datasets/structure_core_photoneo_test"
-    path_out = "/home/simon/datasets/structure_core_photoneo_test_results/ActiveStereoNetv2"
+    path_out = "/home/simon/datasets/structure_core_photoneo_test_results/ActiveStereoNet"
+    model = torch.load("trained_models/train_real_world_new6.pt")
     folders = os.listdir(path)
     scenes = [x for x in folders if os.path.isdir(Path(path) / x)]
 

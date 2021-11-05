@@ -70,6 +70,7 @@ def main():
     max_disp = 144
     scale_factor = 8
     lr_init = 1e-4
+    #lr_init = 1e-4 * 0.5**4
     scheduler_gamma = 0.5
     step_scale = args.step_scale
     scheduler_milestones = [int(20000 * step_scale),
