@@ -127,8 +127,8 @@ class XTLoss(nn.Module):
         std_local = (mean_square_local - mean_local ** 2) # fix by simon!!!!! (why kSize ** 2 - >1< ???)
 
         epsilon = 1e-6
-        
-        return (img - mean_local) / (std_local + epsilon), mean_local, std_local
+        std_local = torch.sqrt(torch.clamp(std_local, min=epsilon)) # todo: try training with this!!!!! (delete if this fails!)
+        return (img - mean_local) / (std_local), mean_local, std_local
 
 
     def ASW(self, img, Cost, kSize, sigma_omega):
